@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * MITM Proxy for Node.js
- * Interactive React Ink UI
+ * Full-screen Interactive React Ink UI
  */
 
 import React from 'react';
@@ -12,50 +12,42 @@ import { startProxy, getCAPath, ensureCA } from './proxy.js';
 
 program
   .option('-p, --port <number>', 'Proxy port', '8888')
-  .option('--classic', 'Use classic CLI mode (proxy.js)')
   .parse();
 
 const opts = program.opts();
 const PORT = parseInt(opts.port);
 
 async function main() {
-  // Initialize CA first
-  const caResult = ensureCA();
+  // Initialize CA
+  ensureCA();
 
-  console.log('\n┌─────────────────────────────────────────┐');
-  console.log('│      MITM Proxy for Node.js v2.0        │');
-  console.log('└─────────────────────────────────────────┘\n');
-
-  if (caResult.generated) {
-    console.log('✓ Generated new CA certificate');
-  } else {
-    console.log('✓ Loaded existing CA certificate');
-  }
-
-  console.log(`\nStarting proxy on port ${PORT}...`);
+  console.clear();
+  console.log('\n  Starting MITM Proxy...\n');
 
   try {
     await startProxy(PORT);
 
-    console.log(`✓ Proxy listening on http://127.0.0.1:${PORT}\n`);
-    console.log('To intercept Node.js traffic:\n');
-    console.log(`  $env:HTTP_PROXY = "http://127.0.0.1:${PORT}"`);
-    console.log(`  $env:HTTPS_PROXY = "http://127.0.0.1:${PORT}"`);
-    console.log(`  $env:NODE_EXTRA_CA_CERTS = "${getCAPath()}"`);
-    console.log('  node yourapp.js\n');
-    console.log('─'.repeat(50));
-    console.log('Loading interactive UI...\n');
-
-    // Small delay to let user see the startup messages
-    await new Promise(r => setTimeout(r, 500));
-
-    // Clear screen and render Ink app
+    // Clear and render full-screen Ink app
     console.clear();
-    const { waitUntilExit } = render(React.createElement(App, { port: PORT }));
+
+    const { waitUntilExit } = render(
+      React.createElement(App, { port: PORT }),
+      {
+        // Full-screen mode options
+        exitOnCtrlC: true,
+        patchConsole: true
+      }
+    );
+
     await waitUntilExit();
 
   } catch (err) {
-    console.error('Failed to start proxy:', err.message);
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n  ✗ Port ${PORT} is already in use.`);
+      console.error(`    Try: node src/index.js -p ${PORT + 1}\n`);
+    } else {
+      console.error('  ✗ Failed to start:', err.message);
+    }
     process.exit(1);
   }
 }
