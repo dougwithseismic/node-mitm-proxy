@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { store } from '../store.js';
 
 const e = React.createElement;
 
@@ -38,13 +39,32 @@ function formatDuration(ms) {
   return `${ms}ms`;
 }
 
+function extractPattern(url) {
+  try {
+    const u = new URL(url);
+    // Get path without query string, use first 2 segments
+    const path = u.pathname.split('/').slice(0, 3).join('/');
+    return u.hostname + path;
+  } catch {
+    return url.substring(0, 40);
+  }
+}
+
 export function RequestList({ requests, selectedId, onSelect, maxHeight = 20 }) {
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [toast, setToast] = useState(null);
 
   const selectedIndex = requests.findIndex(r => r.id === selectedId);
-  const visibleRequests = requests.slice(scrollOffset, scrollOffset + maxHeight);
+  const selected = requests.find(r => r.id === selectedId);
+  const visibleRequests = requests.slice(scrollOffset, scrollOffset + maxHeight - 2);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2000);
+  };
 
   useInput((input, key) => {
+    // Navigation
     if (key.upArrow) {
       const newIndex = Math.max(0, selectedIndex - 1);
       if (newIndex < scrollOffset) setScrollOffset(Math.max(0, scrollOffset - 1));
@@ -52,18 +72,42 @@ export function RequestList({ requests, selectedId, onSelect, maxHeight = 20 }) 
     }
     if (key.downArrow) {
       const newIndex = Math.min(requests.length - 1, selectedIndex + 1);
-      if (newIndex >= scrollOffset + maxHeight) setScrollOffset(scrollOffset + 1);
+      if (newIndex >= scrollOffset + maxHeight - 2) setScrollOffset(scrollOffset + 1);
       if (requests[newIndex]) onSelect(requests[newIndex].id);
     }
     if (key.pageUp) {
-      const newOffset = Math.max(0, scrollOffset - maxHeight);
+      const jump = maxHeight - 2;
+      const newOffset = Math.max(0, scrollOffset - jump);
       setScrollOffset(newOffset);
       if (requests[newOffset]) onSelect(requests[newOffset].id);
     }
     if (key.pageDown) {
-      const newOffset = Math.min(requests.length - maxHeight, scrollOffset + maxHeight);
-      setScrollOffset(Math.max(0, newOffset));
+      const jump = maxHeight - 2;
+      const newOffset = Math.min(Math.max(0, requests.length - jump), scrollOffset + jump);
+      setScrollOffset(newOffset);
       if (requests[newOffset]) onSelect(requests[newOffset].id);
+    }
+
+    // Quick breakpoint on selected request
+    if (selected) {
+      const pattern = extractPattern(selected.url);
+
+      // Shift+R = add request breakpoint for this URL
+      if (input === 'R') {
+        store.addBreakpoint('request', pattern);
+        showToast(`✓ Request BP: ${pattern}`);
+      }
+      // Shift+S = add response breakpoint for this URL
+      if (input === 'S') {
+        store.addBreakpoint('response', pattern);
+        showToast(`✓ Response BP: ${pattern}`);
+      }
+      // Shift+X = add both request + response breakpoint
+      if (input === 'X') {
+        store.addBreakpoint('request', pattern);
+        store.addBreakpoint('response', pattern);
+        showToast(`✓ Req+Res BP: ${pattern}`);
+      }
     }
   });
 
@@ -74,14 +118,19 @@ export function RequestList({ requests, selectedId, onSelect, maxHeight = 20 }) 
       e(Text, { color: '#636e72', dimColor: true }, '│                                      │'),
       e(Text, { color: '#b2bec3' },                 '│   Waiting for requests...            │'),
       e(Text, { color: '#636e72', dimColor: true }, '│                                      │'),
-      e(Text, { color: '#636e72', dimColor: true }, '│   Send traffic through the proxy     │'),
-      e(Text, { color: '#636e72', dimColor: true }, '│   to see it captured here.           │'),
+      e(Text, { color: '#636e72', dimColor: true }, '│   Traffic through the proxy will     │'),
+      e(Text, { color: '#636e72', dimColor: true }, '│   appear here automatically.         │'),
       e(Text, { color: '#636e72', dimColor: true }, '│                                      │'),
       e(Text, { color: '#636e72', dimColor: true }, '└──────────────────────────────────────┘')
     );
   }
 
   return e(Box, { flexDirection: 'column' },
+    // Toast notification
+    toast && e(Box, { backgroundColor: '#1dd1a1', paddingX: 2, marginBottom: 1 },
+      e(Text, { color: '#000', bold: true }, toast)
+    ),
+
     // Header
     e(Box, { paddingX: 1 },
       e(Text, { color: '#636e72' },
@@ -102,26 +151,43 @@ export function RequestList({ requests, selectedId, onSelect, maxHeight = 20 }) 
       const statusColor = STATUS_COLORS[Math.floor((req.responseStatus || 0) / 100)] || '#636e72';
       const rowBg = isSelected ? '#2d3436' : undefined;
 
+      // Check if this URL has a breakpoint
+      const hasReqBp = store.matchesBreakpoint(req.url, 'request');
+      const hasResBp = store.matchesBreakpoint(req.url, 'response');
+
       return e(Box, { key: req.id, paddingX: 1, backgroundColor: rowBg },
         e(Text, { color: isSelected ? '#48dbfb' : '#636e72' }, isSelected ? ' ▸ ' : '   '),
         e(Text, { color: methodColor, bold: true }, req.method.padEnd(8)),
         e(Text, { color: statusColor }, String(req.responseStatus || '···').padEnd(8)),
         e(Text, { color: '#636e72' }, formatDuration(req.duration).padEnd(8)),
         e(Text, { color: '#636e72' }, formatSize(req.responseBody?.length).padEnd(8)),
-        e(Text, { color: isSelected ? '#dfe6e9' : '#b2bec3' }, truncate(req.url, 55)),
+        e(Text, { color: isSelected ? '#dfe6e9' : '#b2bec3' }, truncate(req.url, 50)),
         req.modified && e(Text, { color: '#a29bfe', key: 'mod' }, ' ✎'),
-        req.intercepted && e(Text, { color: '#feca57', key: 'bp' }, ' ⦿')
+        req.intercepted && e(Text, { color: '#feca57', key: 'int' }, ' ⦿'),
+        hasReqBp && e(Text, { color: '#ff6b6b', key: 'rbp' }, ' ⏸'),
+        hasResBp && e(Text, { color: '#48dbfb', key: 'sbp' }, ' ⏸')
       );
     }),
 
     // Footer
     e(Text, { color: '#2d3436' }, '  ' + '─'.repeat(90)),
-    requests.length > maxHeight && e(Box, { paddingX: 2, marginTop: 0 },
-      e(Text, { color: '#636e72' },
-        `Showing ${scrollOffset + 1}–${Math.min(scrollOffset + maxHeight, requests.length)} of ${requests.length}`
+
+    // Quick actions hint
+    e(Box, { paddingX: 2, marginTop: 0, justifyContent: 'space-between' },
+      e(Box, null,
+        requests.length > maxHeight - 2 && e(Text, { color: '#636e72' },
+          `${scrollOffset + 1}–${Math.min(scrollOffset + maxHeight - 2, requests.length)} of ${requests.length}`
+        )
       ),
-      e(Text, { color: '#2d3436' }, ' │ '),
-      e(Text, { color: '#636e72' }, 'PgUp/PgDn to scroll')
+      e(Box, null,
+        e(Text, { color: '#636e72' }, 'Quick: '),
+        e(Text, { color: '#ff6b6b', bold: true }, 'R'),
+        e(Text, { color: '#636e72' }, ' req bp  '),
+        e(Text, { color: '#48dbfb', bold: true }, 'S'),
+        e(Text, { color: '#636e72' }, ' res bp  '),
+        e(Text, { color: '#a29bfe', bold: true }, 'X'),
+        e(Text, { color: '#636e72' }, ' both')
+      )
     )
   );
 }
