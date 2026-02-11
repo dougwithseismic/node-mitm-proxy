@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
  * Test client - makes requests through the proxy
- * Run with: HTTP_PROXY=http://127.0.0.1:8888 HTTPS_PROXY=http://127.0.0.1:8888 NODE_EXTRA_CA_CERTS=./.certs/ca.crt node test-client.js
  */
 
-const https = require('https');
-const http = require('http');
+import https from 'https';
+import http from 'http';
 
 async function makeRequest(url) {
   return new Promise((resolve, reject) => {
@@ -30,7 +29,7 @@ async function main() {
     await makeRequest('https://api.github.com/');
     await makeRequest('https://jsonplaceholder.typicode.com/posts/1');
 
-    console.log('\nDone! Check the proxy CLI for captured requests.');
+    console.log('\nDone! Check the proxy UI for captured requests.');
   } catch (err) {
     console.error('Error:', err.message);
   }
