@@ -3,6 +3,12 @@
  */
 
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
 
 class Store extends EventEmitter {
   constructor() {
@@ -13,6 +19,8 @@ class Store extends EventEmitter {
       request: [],
       response: []
     };
+    this.blockRules = [];      // Auto-block matching requests
+    this.redirectRules = [];   // Redirect matching requests to another URL
     this.pendingBreakpoint = null;
     this.selectedId = null;
     this.view = 'list'; // 'list' | 'detail' | 'breakpoint'
@@ -113,6 +121,112 @@ class Store extends EventEmitter {
     return null;
   }
 
+  // Block rules - auto-reject matching requests
+  addBlockRule(pattern, statusCode = 403) {
+    this.blockRules.push({ pattern, statusCode, enabled: true });
+    this.emit('change');
+  }
+
+  removeBlockRule(index) {
+    this.blockRules.splice(index, 1);
+    this.emit('change');
+  }
+
+  toggleBlockRule(index) {
+    const rule = this.blockRules[index];
+    if (rule) rule.enabled = !rule.enabled;
+    this.emit('change');
+  }
+
+  matchesBlockRule(url) {
+    for (const rule of this.blockRules) {
+      if (rule.enabled && url.includes(rule.pattern)) {
+        return rule;
+      }
+    }
+    return null;
+  }
+
+  // Redirect rules - proxy matching requests elsewhere
+  addRedirectRule(pattern, target) {
+    this.redirectRules.push({ pattern, target, enabled: true });
+    this.emit('change');
+  }
+
+  removeRedirectRule(index) {
+    this.redirectRules.splice(index, 1);
+    this.emit('change');
+  }
+
+  toggleRedirectRule(index) {
+    const rule = this.redirectRules[index];
+    if (rule) rule.enabled = !rule.enabled;
+    this.emit('change');
+  }
+
+  getRedirect(url) {
+    for (const rule of this.redirectRules) {
+      if (rule.enabled && url.includes(rule.pattern)) {
+        return rule;
+      }
+    }
+    return null;
+  }
+
+  clearRules() {
+    this.blockRules = [];
+    this.redirectRules = [];
+    this.emit('change');
+  }
+
+  // Config save/load
+  saveConfig() {
+    const config = {
+      breakpoints: this.breakpoints,
+      blockRules: this.blockRules,
+      redirectRules: this.redirectRules,
+      filter: this.filter
+    };
+    try {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+      return { success: true, path: CONFIG_PATH };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  loadConfig() {
+    try {
+      if (!fs.existsSync(CONFIG_PATH)) {
+        return { success: false, error: 'Config file not found' };
+      }
+      const content = fs.readFileSync(CONFIG_PATH, 'utf8');
+      const config = JSON.parse(content);
+
+      if (config.breakpoints) {
+        this.breakpoints = config.breakpoints;
+      }
+      if (config.blockRules) {
+        this.blockRules = config.blockRules;
+      }
+      if (config.redirectRules) {
+        this.redirectRules = config.redirectRules;
+      }
+      if (config.filter) {
+        this.filter = config.filter;
+      }
+
+      this.emit('change');
+      return { success: true, path: CONFIG_PATH };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  getConfigPath() {
+    return CONFIG_PATH;
+  }
+
   // Pending breakpoint (when paused)
   setPendingBreakpoint(bp) {
     this.pendingBreakpoint = bp;
@@ -153,5 +267,8 @@ export class RequestEntry {
     this.duration = null;
     this.modified = false;
     this.intercepted = false;
+    this.blocked = false;
+    this.redirected = false;
+    this.redirectTarget = null;
   }
 }

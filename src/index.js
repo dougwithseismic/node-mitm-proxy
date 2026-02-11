@@ -9,6 +9,7 @@ import { render } from 'ink';
 import { program } from 'commander';
 import { App } from './app.js';
 import { startProxy, getCAPath, ensureCA } from './proxy.js';
+import { store } from './store.js';
 
 program
   .option('-p, --port <number>', 'Proxy port', '8888')
@@ -21,8 +22,15 @@ async function main() {
   // Initialize CA
   ensureCA();
 
+  // Load saved config
+  const configResult = store.loadConfig();
+
   console.clear();
-  console.log('\n  Starting MITM Proxy...\n');
+  console.log('\n  Starting MITM Proxy...');
+  if (configResult.success) {
+    console.log(`  Loaded config from ${configResult.path}`);
+  }
+  console.log('');
 
   try {
     await startProxy(PORT);

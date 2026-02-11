@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { store } from '../store.js';
 
 const e = React.createElement;
 
@@ -12,13 +11,6 @@ const METHOD_COLORS = {
   PATCH: '#a29bfe',
   OPTIONS: '#636e72',
   HEAD: '#636e72'
-};
-
-const STATUS_COLORS = {
-  2: '#1dd1a1',
-  3: '#48dbfb',
-  4: '#feca57',
-  5: '#ff6b6b'
 };
 
 function truncate(str, len) {
@@ -42,26 +34,28 @@ function formatDuration(ms) {
 function extractPattern(url) {
   try {
     const u = new URL(url);
-    // Get path without query string, use first 2 segments
-    const path = u.pathname.split('/').slice(0, 3).join('/');
-    return u.hostname + path;
+    const pathParts = u.pathname.split('/').filter(Boolean).slice(0, 2);
+    return u.hostname + (pathParts.length ? '/' + pathParts.join('/') : '');
   } catch {
     return url.substring(0, 40);
   }
 }
 
-export function RequestList({ requests, selectedId, onSelect, maxHeight = 20 }) {
+function getStatusColor(status) {
+  if (!status) return '#636e72';
+  if (status < 300) return '#1dd1a1';
+  if (status < 400) return '#48dbfb';
+  if (status < 500) return '#feca57';
+  return '#ff6b6b';
+}
+
+export function RequestList({ requests, selectedId, onSelect, maxHeight = 20, onAddBreakpoint, onAddBlock }) {
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [toast, setToast] = useState(null);
 
   const selectedIndex = requests.findIndex(r => r.id === selectedId);
   const selected = requests.find(r => r.id === selectedId);
-  const visibleRequests = requests.slice(scrollOffset, scrollOffset + maxHeight - 2);
-
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2000);
-  };
+  const visibleCount = maxHeight - 4; // Account for header, footer, borders
+  const visibleRequests = requests.slice(scrollOffset, scrollOffset + visibleCount);
 
   useInput((input, key) => {
     // Navigation
@@ -72,121 +66,105 @@ export function RequestList({ requests, selectedId, onSelect, maxHeight = 20 }) 
     }
     if (key.downArrow) {
       const newIndex = Math.min(requests.length - 1, selectedIndex + 1);
-      if (newIndex >= scrollOffset + maxHeight - 2) setScrollOffset(scrollOffset + 1);
+      if (newIndex >= scrollOffset + visibleCount) setScrollOffset(scrollOffset + 1);
       if (requests[newIndex]) onSelect(requests[newIndex].id);
     }
     if (key.pageUp) {
-      const jump = maxHeight - 2;
+      const jump = visibleCount;
       const newOffset = Math.max(0, scrollOffset - jump);
       setScrollOffset(newOffset);
       if (requests[newOffset]) onSelect(requests[newOffset].id);
     }
     if (key.pageDown) {
-      const jump = maxHeight - 2;
+      const jump = visibleCount;
       const newOffset = Math.min(Math.max(0, requests.length - jump), scrollOffset + jump);
       setScrollOffset(newOffset);
       if (requests[newOffset]) onSelect(requests[newOffset].id);
     }
 
-    // Quick breakpoint on selected request
+    // Quick actions on selected request
     if (selected) {
       const pattern = extractPattern(selected.url);
 
-      // Shift+R = add request breakpoint for this URL
-      if (input === 'R') {
-        store.addBreakpoint('request', pattern);
-        showToast(`✓ Request BP: ${pattern}`);
+      // B = Add breakpoint for this URL pattern
+      if (input === 'b' || input === 'B') {
+        onAddBreakpoint?.(pattern);
       }
-      // Shift+S = add response breakpoint for this URL
-      if (input === 'S') {
-        store.addBreakpoint('response', pattern);
-        showToast(`✓ Response BP: ${pattern}`);
-      }
-      // Shift+X = add both request + response breakpoint
-      if (input === 'X') {
-        store.addBreakpoint('request', pattern);
-        store.addBreakpoint('response', pattern);
-        showToast(`✓ Req+Res BP: ${pattern}`);
+
+      // X = Block this URL pattern
+      if (input === 'x' || input === 'X') {
+        onAddBlock?.(pattern);
       }
     }
   });
 
+  // Empty state
   if (requests.length === 0) {
-    return e(Box, { flexDirection: 'column', padding: 2, alignItems: 'center' },
+    return e(Box, { flexDirection: 'column', padding: 2, justifyContent: 'center', alignItems: 'center', height: maxHeight },
       e(Text, { color: '#636e72' }, ''),
-      e(Text, { color: '#636e72', dimColor: true }, '┌──────────────────────────────────────┐'),
-      e(Text, { color: '#636e72', dimColor: true }, '│                                      │'),
-      e(Text, { color: '#b2bec3' },                 '│   Waiting for requests...            │'),
-      e(Text, { color: '#636e72', dimColor: true }, '│                                      │'),
-      e(Text, { color: '#636e72', dimColor: true }, '│   Traffic through the proxy will     │'),
-      e(Text, { color: '#636e72', dimColor: true }, '│   appear here automatically.         │'),
-      e(Text, { color: '#636e72', dimColor: true }, '│                                      │'),
-      e(Text, { color: '#636e72', dimColor: true }, '└──────────────────────────────────────┘')
+      e(Box, { borderStyle: 'round', borderColor: '#2d3436', paddingX: 4, paddingY: 1, flexDirection: 'column' },
+        e(Text, { color: '#b2bec3' }, 'Waiting for requests...'),
+        e(Text, { color: '#636e72', marginTop: 1 }, 'Configure your app to use proxy:'),
+        e(Text, { color: '#48dbfb' }, 'HTTP_PROXY=http://127.0.0.1:8888')
+      )
     );
   }
 
   return e(Box, { flexDirection: 'column' },
-    // Toast notification
-    toast && e(Box, { backgroundColor: '#1dd1a1', paddingX: 2, marginBottom: 1 },
-      e(Text, { color: '#000', bold: true }, toast)
+    // Column headers
+    e(Box, { paddingX: 1, marginBottom: 0 },
+      e(Text, { color: '#636e72' }, '   '),
+      e(Text, { color: '#636e72', bold: true }, 'METHOD  '),
+      e(Text, { color: '#636e72', bold: true }, 'STATUS  '),
+      e(Text, { color: '#636e72', bold: true }, 'TIME    '),
+      e(Text, { color: '#636e72', bold: true }, 'SIZE    '),
+      e(Text, { color: '#636e72', bold: true }, 'URL')
     ),
 
-    // Header
-    e(Box, { paddingX: 1 },
-      e(Text, { color: '#636e72' },
-        '   ' +
-        'METHOD'.padEnd(8) +
-        'STATUS'.padEnd(8) +
-        'TIME'.padEnd(8) +
-        'SIZE'.padEnd(8) +
-        'URL'
-      )
-    ),
-    e(Text, { color: '#2d3436' }, '  ' + '─'.repeat(90)),
+    e(Text, { color: '#2d3436' }, '─'.repeat(90)),
 
-    // Requests
+    // Request rows
     ...visibleRequests.map((req) => {
       const isSelected = req.id === selectedId;
       const methodColor = METHOD_COLORS[req.method] || '#dfe6e9';
-      const statusColor = STATUS_COLORS[Math.floor((req.responseStatus || 0) / 100)] || '#636e72';
-      const rowBg = isSelected ? '#2d3436' : undefined;
+      const statusColor = req.blocked ? '#ff6b6b' : getStatusColor(req.responseStatus);
 
-      // Check if this URL has a breakpoint
-      const hasReqBp = store.matchesBreakpoint(req.url, 'request');
-      const hasResBp = store.matchesBreakpoint(req.url, 'response');
+      return e(Box, {
+        key: req.id,
+        paddingX: 1,
+        backgroundColor: isSelected ? '#2d3436' : undefined
+      },
+        // Selection indicator
+        e(Text, { color: isSelected ? '#48dbfb' : '#636e72' }, isSelected ? '▸ ' : '  '),
 
-      return e(Box, { key: req.id, paddingX: 1, backgroundColor: rowBg },
-        e(Text, { color: isSelected ? '#48dbfb' : '#636e72' }, isSelected ? ' ▸ ' : '   '),
+        // Method
         e(Text, { color: methodColor, bold: true }, req.method.padEnd(8)),
-        e(Text, { color: statusColor }, String(req.responseStatus || '···').padEnd(8)),
+
+        // Status
+        e(Text, { color: statusColor },
+          String(req.blocked ? 'BLOCK' : req.responseStatus || '···').padEnd(8)
+        ),
+
+        // Duration
         e(Text, { color: '#636e72' }, formatDuration(req.duration).padEnd(8)),
+
+        // Size
         e(Text, { color: '#636e72' }, formatSize(req.responseBody?.length).padEnd(8)),
-        e(Text, { color: isSelected ? '#dfe6e9' : '#b2bec3' }, truncate(req.url, 50)),
-        req.modified && e(Text, { color: '#a29bfe', key: 'mod' }, ' ✎'),
-        req.intercepted && e(Text, { color: '#feca57', key: 'int' }, ' ⦿'),
-        hasReqBp && e(Text, { color: '#ff6b6b', key: 'rbp' }, ' ⏸'),
-        hasResBp && e(Text, { color: '#48dbfb', key: 'sbp' }, ' ⏸')
+
+        // URL (truncated)
+        e(Text, { color: isSelected ? '#dfe6e9' : '#b2bec3' }, truncate(req.url, 48)),
+
+        // Status icons
+        req.modified && e(Text, { color: '#a29bfe' }, ' ✎'),
+        req.redirected && e(Text, { color: '#48dbfb' }, ' ↪'),
+        req.intercepted && !req.blocked && e(Text, { color: '#feca57' }, ' ●')
       );
     }),
 
-    // Footer
-    e(Text, { color: '#2d3436' }, '  ' + '─'.repeat(90)),
-
-    // Quick actions hint
-    e(Box, { paddingX: 2, marginTop: 0, justifyContent: 'space-between' },
-      e(Box, null,
-        requests.length > maxHeight - 2 && e(Text, { color: '#636e72' },
-          `${scrollOffset + 1}–${Math.min(scrollOffset + maxHeight - 2, requests.length)} of ${requests.length}`
-        )
-      ),
-      e(Box, null,
-        e(Text, { color: '#636e72' }, 'Quick: '),
-        e(Text, { color: '#ff6b6b', bold: true }, 'R'),
-        e(Text, { color: '#636e72' }, ' req bp  '),
-        e(Text, { color: '#48dbfb', bold: true }, 'S'),
-        e(Text, { color: '#636e72' }, ' res bp  '),
-        e(Text, { color: '#a29bfe', bold: true }, 'X'),
-        e(Text, { color: '#636e72' }, ' both')
+    // Scroll indicator
+    requests.length > visibleCount && e(Box, { paddingX: 1, marginTop: 1 },
+      e(Text, { color: '#636e72' },
+        `Showing ${scrollOffset + 1}–${Math.min(scrollOffset + visibleCount, requests.length)} of ${requests.length}`
       )
     )
   );

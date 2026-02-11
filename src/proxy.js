@@ -122,6 +122,21 @@ function handleHttpRequest(clientReq, clientRes) {
 
   const startTime = Date.now();
 
+  // Check block rules first
+  const blockRule = store.matchesBlockRule(fullUrl);
+  if (blockRule) {
+    entry.intercepted = true;
+    store.updateRequest(id, {
+      intercepted: true,
+      responseStatus: blockRule.statusCode,
+      duration: Date.now() - startTime,
+      blocked: true
+    });
+    clientRes.writeHead(blockRule.statusCode, { 'content-type': 'text/plain' });
+    clientRes.end(`Blocked by proxy rule: ${blockRule.pattern}`);
+    return;
+  }
+
   const reqChunks = [];
   clientReq.on('data', chunk => reqChunks.push(chunk));
   clientReq.on('end', async () => {
@@ -133,6 +148,29 @@ function handleHttpRequest(clientReq, clientRes) {
       headers: { ...clientReq.headers },
       body: entry.requestBody.toString('utf8')
     };
+
+    // Check redirect rules
+    const redirectRule = store.getRedirect(fullUrl);
+    let targetHost = parsed.hostname;
+    let targetPort = parsed.port || 80;
+    let targetPath = parsed.pathname + (parsed.search || '');
+    let useHttps = false;
+
+    if (redirectRule) {
+      entry.redirected = true;
+      entry.redirectTarget = redirectRule.target;
+      try {
+        const targetUrl = new URL(redirectRule.target);
+        targetHost = targetUrl.hostname;
+        targetPort = targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80);
+        targetPath = targetUrl.pathname + (targetUrl.search || '') + (parsed.search || '');
+        useHttps = targetUrl.protocol === 'https:';
+        reqData.headers.host = targetHost;
+      } catch {
+        // Invalid target URL, use as-is
+      }
+      store.updateRequest(id, { redirected: true, redirectTarget: redirectRule.target });
+    }
 
     const reqBp = store.matchesBreakpoint(fullUrl, 'request');
     if (reqBp) {
@@ -149,10 +187,11 @@ function handleHttpRequest(clientReq, clientRes) {
       if (decision.action === 'edit') entry.modified = true;
     }
 
-    const proxyReq = http.request({
-      hostname: parsed.hostname,
-      port: parsed.port || 80,
-      path: parsed.pathname + (parsed.search || ''),
+    const httpLib = useHttps ? https : http;
+    const proxyReq = httpLib.request({
+      hostname: targetHost,
+      port: targetPort,
+      path: targetPath,
       method: reqData.method,
       headers: reqData.headers
     }, async (proxyRes) => {
@@ -246,6 +285,21 @@ function handleHttpsRequest(hostname, port, clientReq, clientRes) {
 
   const startTime = Date.now();
 
+  // Check block rules first
+  const blockRule = store.matchesBlockRule(fullUrl);
+  if (blockRule) {
+    entry.intercepted = true;
+    store.updateRequest(id, {
+      intercepted: true,
+      responseStatus: blockRule.statusCode,
+      duration: Date.now() - startTime,
+      blocked: true
+    });
+    clientRes.writeHead(blockRule.statusCode, { 'content-type': 'text/plain' });
+    clientRes.end(`Blocked by proxy rule: ${blockRule.pattern}`);
+    return;
+  }
+
   const reqChunks = [];
   clientReq.on('data', chunk => reqChunks.push(chunk));
   clientReq.on('end', async () => {
@@ -257,6 +311,29 @@ function handleHttpsRequest(hostname, port, clientReq, clientRes) {
       headers: { ...clientReq.headers, host: hostname },
       body: entry.requestBody.toString('utf8')
     };
+
+    // Check redirect rules
+    const redirectRule = store.getRedirect(fullUrl);
+    let targetHost = hostname;
+    let targetPort = port;
+    let targetPath = clientReq.url;
+    let useHttps = true;
+
+    if (redirectRule) {
+      entry.redirected = true;
+      entry.redirectTarget = redirectRule.target;
+      try {
+        const targetUrl = new URL(redirectRule.target);
+        targetHost = targetUrl.hostname;
+        targetPort = targetUrl.port || (targetUrl.protocol === 'https:' ? 443 : 80);
+        targetPath = targetUrl.pathname + (targetUrl.search || '');
+        useHttps = targetUrl.protocol === 'https:';
+        reqData.headers.host = targetHost;
+      } catch {
+        // Invalid target URL, use as-is
+      }
+      store.updateRequest(id, { redirected: true, redirectTarget: redirectRule.target });
+    }
 
     const reqBp = store.matchesBreakpoint(fullUrl, 'request');
     if (reqBp) {
@@ -273,10 +350,11 @@ function handleHttpsRequest(hostname, port, clientReq, clientRes) {
       if (decision.action === 'edit') entry.modified = true;
     }
 
-    const proxyReq = https.request({
-      hostname,
-      port,
-      path: clientReq.url,
+    const httpLib = useHttps ? https : http;
+    const proxyReq = httpLib.request({
+      hostname: targetHost,
+      port: targetPort,
+      path: targetPath,
       method: reqData.method,
       headers: reqData.headers
     }, async (proxyRes) => {

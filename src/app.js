@@ -5,89 +5,329 @@ import { store } from './store.js';
 import { RequestList } from './components/request-list.js';
 import { RequestDetail } from './components/request-detail.js';
 import { BreakpointPanel } from './components/breakpoint-panel.js';
-import { BreakpointManager } from './components/breakpoint-manager.js';
 import { getCAPath } from './proxy.js';
 
 const e = React.createElement;
 
-// Header component - fixed at top
-function Header({ port, requestCount, breakpointCount, filter }) {
+// Simple pill button component
+function Button({ label, hotkey, color = '#48dbfb', active = false }) {
+  return e(Box, {
+    borderStyle: 'round',
+    borderColor: active ? color : '#444',
+    paddingX: 1,
+    marginRight: 1
+  },
+    hotkey && e(Text, { color, bold: true }, hotkey),
+    hotkey && e(Text, { color: '#636e72' }, ' '),
+    e(Text, { color: active ? color : '#b2bec3' }, label)
+  );
+}
+
+// Toast notification
+function Toast({ message }) {
+  if (!message) return null;
+  return e(Box, {
+    position: 'absolute',
+    top: 3,
+    right: 2,
+    backgroundColor: '#1dd1a1',
+    paddingX: 2,
+    paddingY: 0
+  },
+    e(Text, { color: '#000', bold: true }, message)
+  );
+}
+
+// Header with nav tabs
+function Header({ port, view, stats }) {
+  const tabs = [
+    { id: 'list', label: 'Requests', hotkey: '1', color: '#48dbfb' },
+    { id: 'rules', label: 'Rules', hotkey: '2', color: '#a29bfe' },
+  ];
+
   return e(Box, { flexDirection: 'column', flexShrink: 0 },
-    e(Box, { backgroundColor: '#1a1a2e', paddingX: 2, justifyContent: 'space-between' },
+    // Title bar
+    e(Box, { backgroundColor: '#1a1a2e', paddingX: 2, paddingY: 0, justifyContent: 'space-between' },
       e(Box, null,
-        e(Text, { color: '#ff6b6b', bold: true }, '◉ '),
-        e(Text, { color: '#feca57', bold: true }, '◉ '),
-        e(Text, { color: '#48dbfb', bold: true }, '◉  '),
+        e(Text, { color: '#ff6b6b', bold: true }, '● '),
         e(Text, { color: 'white', bold: true }, 'MITM PROXY'),
-        e(Text, { color: '#636e72' }, ' v2.0')
+        e(Text, { color: '#636e72' }, ` :${port}`)
       ),
       e(Box, null,
-        e(Text, { color: '#48dbfb' }, `⚡:${port}`),
-        e(Text, { color: '#2d3436' }, ' │ '),
-        e(Text, { color: '#ff6b6b' }, requestCount),
-        e(Text, { color: '#636e72' }, ' reqs'),
-        e(Text, { color: '#2d3436' }, ' │ '),
-        e(Text, { color: '#feca57' }, breakpointCount),
-        e(Text, { color: '#636e72' }, ' bp'),
-        filter && e(Text, { color: '#a29bfe', key: 'f' }, ` │ 🔍"${filter}"`)
+        e(Text, { color: '#636e72' }, `${stats.requests} reqs`),
+        stats.breakpoints > 0 && e(Text, { color: '#feca57' }, ` · ${stats.breakpoints} bp`),
+        stats.blocks > 0 && e(Text, { color: '#ff6b6b' }, ` · ${stats.blocks} blocked`),
+        stats.redirects > 0 && e(Text, { color: '#48dbfb' }, ` · ${stats.redirects} redirect`)
       )
     ),
-    e(Box, { paddingX: 2, backgroundColor: '#0d0d1a' },
-      e(Text, { color: '#444' }, `CA: ${getCAPath()}`)
+    // Nav tabs
+    e(Box, { backgroundColor: '#0d0d1a', paddingX: 1 },
+      ...tabs.map(tab =>
+        e(Box, {
+          key: tab.id,
+          paddingX: 2,
+          borderStyle: view === tab.id ? 'bold' : undefined,
+          borderColor: tab.color,
+          borderBottom: view === tab.id,
+          borderTop: false,
+          borderLeft: false,
+          borderRight: false
+        },
+          e(Text, { color: '#636e72' }, tab.hotkey),
+          e(Text, { color: view === tab.id ? tab.color : '#636e72' }, ` ${tab.label}`)
+        )
+      )
     )
   );
 }
 
-// Footer component - fixed at bottom
-function Footer({ view }) {
-  const k = { color: '#48dbfb', bold: true };
-  const t = { color: '#636e72' };
-  const s = { color: '#2d3436' };
-
-  const keys = {
+// Context bar - shows relevant actions for current view
+function ContextBar({ view, hasSelection, isEditing }) {
+  const actions = {
     list: [
-      ['↑↓', 'nav'], ['⏎', 'open'], ['/', 'filter'], ['b', 'bp'], ['c', 'clear'], ['?', 'help'], ['q', 'quit']
+      { hotkey: '↑↓', label: 'Navigate' },
+      { hotkey: 'Enter', label: 'Details' },
+      { hotkey: 'B', label: 'Add Breakpoint', color: '#feca57' },
+      { hotkey: 'X', label: 'Block URL', color: '#ff6b6b' },
+      { hotkey: '/', label: 'Filter' },
+      { hotkey: 'C', label: 'Clear' },
     ],
     detail: [
-      ['1-4', 'tabs'], ['esc', 'back'], ['q', 'quit']
+      { hotkey: 'Tab', label: 'Switch Tabs' },
+      { hotkey: 'Esc', label: 'Back' },
+    ],
+    rules: [
+      { hotkey: 'N', label: 'New Rule', color: '#1dd1a1' },
+      { hotkey: 'Enter', label: 'Edit' },
+      { hotkey: 'D', label: 'Delete', color: '#ff6b6b' },
+      { hotkey: 'Space', label: 'Toggle' },
     ],
     breakpoint: [
-      ['f', 'forward', '#1dd1a1'], ['e', 'edit', '#feca57'], ['d', 'drop', '#ff6b6b']
-    ],
-    'breakpoint-manager': [
-      ['r', 'req bp'], ['s', 'res bp'], ['t', 'toggle'], ['d', 'delete'], ['esc', 'back']
+      { hotkey: 'E', label: 'Edit', color: '#feca57' },
+      { hotkey: 'F', label: 'Forward', color: '#1dd1a1' },
+      { hotkey: 'D', label: 'Drop', color: '#ff6b6b' },
     ],
     filter: [
-      ['⏎', 'apply'], ['esc', 'cancel']
+      { hotkey: 'Enter', label: 'Apply' },
+      { hotkey: 'Esc', label: 'Cancel' },
     ]
   };
 
-  const items = keys[view] || keys.list;
+  const items = actions[view] || actions.list;
 
   return e(Box, {
     backgroundColor: '#1a1a2e',
     paddingX: 2,
     paddingY: 0,
     flexShrink: 0,
-    borderStyle: 'single',
-    borderColor: '#2d3436',
-    borderTop: true,
-    borderBottom: false,
-    borderLeft: false,
-    borderRight: false
+    justifyContent: 'space-between'
   },
-    ...items.flatMap((item, i) => {
-      const [key, label, color] = item;
-      return [
-        i > 0 && e(Text, { key: `s${i}`, ...s }, ' │ '),
-        e(Text, { key: `k${i}`, color: color || k.color, bold: true }, key),
-        e(Text, { key: `l${i}`, ...t }, ` ${label}`)
-      ].filter(Boolean);
-    })
+    e(Box, null,
+      ...items.map((item, i) =>
+        e(Box, { key: i, marginRight: 2 },
+          e(Text, { color: item.color || '#48dbfb', bold: true }, item.hotkey),
+          e(Text, { color: '#636e72' }, ` ${item.label}`)
+        )
+      )
+    ),
+    e(Box, null,
+      e(Text, { color: '#636e72' }, 'S Save · '),
+      e(Text, { color: '#636e72' }, 'Q Quit')
+    )
   );
 }
 
-// Main App with full-screen shell
+// Rules panel - combined breakpoints + blocks + redirects
+function RulesPanel({ breakpoints, blockRules, redirectRules, onBack }) {
+  const [tab, setTab] = useState('breakpoints'); // 'breakpoints' | 'blocks' | 'redirects'
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [adding, setAdding] = useState(null); // null | 'breakpoint' | 'block' | 'redirect'
+  const [inputValue, setInputValue] = useState('');
+  const [inputStep, setInputStep] = useState(0);
+  const [redirectTarget, setRedirectTarget] = useState('');
+
+  const allBreakpoints = [...breakpoints.request.map(b => ({ ...b, type: 'request' })), ...breakpoints.response.map(b => ({ ...b, type: 'response' }))];
+
+  const currentList = tab === 'breakpoints' ? allBreakpoints : tab === 'blocks' ? blockRules : redirectRules;
+
+  useInput((input, key) => {
+    if (adding) {
+      if (key.escape) {
+        setAdding(null);
+        setInputValue('');
+        setInputStep(0);
+      }
+      return; // Let TextInput handle the rest
+    }
+
+    if (key.escape) onBack();
+
+    // Tab switching
+    if (input === '1') setTab('breakpoints');
+    if (input === '2') setTab('blocks');
+    if (input === '3') setTab('redirects');
+
+    // Navigation
+    if (key.upArrow) setSelectedIndex(Math.max(0, selectedIndex - 1));
+    if (key.downArrow) setSelectedIndex(Math.min(currentList.length - 1, selectedIndex + 1));
+
+    // Add new
+    if (input === 'n' || input === 'N') {
+      if (tab === 'breakpoints') setAdding('breakpoint');
+      else if (tab === 'blocks') setAdding('block');
+      else setAdding('redirect');
+      setInputValue('');
+      setInputStep(0);
+    }
+
+    // Delete
+    if ((input === 'd' || input === 'D') && currentList.length > 0) {
+      if (tab === 'breakpoints') {
+        const bp = allBreakpoints[selectedIndex];
+        const typeList = breakpoints[bp.type];
+        const idx = typeList.findIndex(b => b.pattern === bp.pattern);
+        if (idx >= 0) store.removeBreakpoint(bp.type, idx);
+      } else if (tab === 'blocks') {
+        store.removeBlockRule(selectedIndex);
+      } else {
+        store.removeRedirectRule(selectedIndex);
+      }
+      setSelectedIndex(Math.max(0, selectedIndex - 1));
+    }
+
+    // Toggle
+    if (input === ' ' && currentList.length > 0) {
+      if (tab === 'breakpoints') {
+        const bp = allBreakpoints[selectedIndex];
+        const typeList = breakpoints[bp.type];
+        const idx = typeList.findIndex(b => b.pattern === bp.pattern);
+        if (idx >= 0) store.toggleBreakpoint(bp.type, idx);
+      } else if (tab === 'blocks') {
+        store.toggleBlockRule(selectedIndex);
+      } else {
+        store.toggleRedirectRule(selectedIndex);
+      }
+    }
+  });
+
+  const handleSubmit = (value) => {
+    if (!value.trim()) return;
+
+    if (adding === 'breakpoint') {
+      store.addBreakpoint('request', value.trim());
+      store.addBreakpoint('response', value.trim());
+    } else if (adding === 'block') {
+      store.addBlockRule(value.trim());
+    } else if (adding === 'redirect') {
+      if (inputStep === 0) {
+        setInputValue(value.trim());
+        setInputStep(1);
+        return;
+      } else {
+        store.addRedirectRule(inputValue, value.trim());
+      }
+    }
+
+    setAdding(null);
+    setInputValue('');
+    setInputStep(0);
+  };
+
+  // Add form
+  if (adding) {
+    const titles = {
+      breakpoint: 'Add Breakpoint',
+      block: 'Add Block Rule',
+      redirect: inputStep === 0 ? 'Add Redirect — Pattern' : 'Add Redirect — Target'
+    };
+    const hints = {
+      breakpoint: 'URL pattern to intercept (e.g., "api.example.com"):',
+      block: 'URL pattern to block (e.g., "ads.example.com"):',
+      redirect: inputStep === 0 ? 'URL pattern to match:' : `Redirect "${inputValue}" to:`
+    };
+
+    return e(Box, { flexDirection: 'column', padding: 1 },
+      e(Box, { borderStyle: 'round', borderColor: '#1dd1a1', paddingX: 2 },
+        e(Text, { color: '#1dd1a1', bold: true }, titles[adding])
+      ),
+      e(Text, { color: '#b2bec3', marginY: 1 }, hints[adding]),
+      e(Box, { marginY: 1 },
+        e(Text, { color: '#1dd1a1' }, '> '),
+        e(TextInput, {
+          value: inputStep === 1 ? redirectTarget : inputValue,
+          onChange: inputStep === 1 ? setRedirectTarget : setInputValue,
+          onSubmit: (v) => handleSubmit(inputStep === 1 ? v : v)
+        })
+      ),
+      e(Text, { color: '#636e72' }, 'Enter to save · Esc to cancel')
+    );
+  }
+
+  return e(Box, { flexDirection: 'column', padding: 1 },
+    // Tab bar
+    e(Box, { marginBottom: 1 },
+      e(Box, {
+        paddingX: 2,
+        borderStyle: tab === 'breakpoints' ? 'round' : undefined,
+        borderColor: '#feca57'
+      },
+        e(Text, { color: '#636e72' }, '1 '),
+        e(Text, { color: tab === 'breakpoints' ? '#feca57' : '#636e72' }, `Breakpoints (${allBreakpoints.length})`)
+      ),
+      e(Box, {
+        paddingX: 2,
+        borderStyle: tab === 'blocks' ? 'round' : undefined,
+        borderColor: '#ff6b6b'
+      },
+        e(Text, { color: '#636e72' }, '2 '),
+        e(Text, { color: tab === 'blocks' ? '#ff6b6b' : '#636e72' }, `Blocks (${blockRules.length})`)
+      ),
+      e(Box, {
+        paddingX: 2,
+        borderStyle: tab === 'redirects' ? 'round' : undefined,
+        borderColor: '#48dbfb'
+      },
+        e(Text, { color: '#636e72' }, '3 '),
+        e(Text, { color: tab === 'redirects' ? '#48dbfb' : '#636e72' }, `Redirects (${redirectRules.length})`)
+      )
+    ),
+
+    // List
+    e(Box, { flexDirection: 'column', marginY: 1 },
+      currentList.length === 0 ?
+        e(Text, { color: '#636e72' }, '  No rules. Press N to add one.') :
+        currentList.map((rule, i) => {
+          const isSelected = i === selectedIndex;
+          const color = tab === 'breakpoints' ? '#feca57' : tab === 'blocks' ? '#ff6b6b' : '#48dbfb';
+          return e(Box, { key: i, backgroundColor: isSelected ? '#2d3436' : undefined, paddingX: 1 },
+            e(Text, { color: isSelected ? color : '#636e72' }, isSelected ? '▸ ' : '  '),
+            e(Text, { color: rule.enabled ? '#dfe6e9' : '#636e72', strikethrough: !rule.enabled },
+              rule.pattern
+            ),
+            tab === 'breakpoints' && e(Text, { color: '#636e72' }, ` (${rule.type})`),
+            tab === 'redirects' && e(Text, { color: '#48dbfb' }, ' → '),
+            tab === 'redirects' && e(Text, { color: '#1dd1a1' }, rule.target),
+            !rule.enabled && e(Text, { color: '#feca57' }, ' [off]')
+          );
+        })
+    ),
+
+    // Help
+    e(Text, { color: '#2d3436', marginTop: 1 }, '─'.repeat(60)),
+    e(Box, { marginTop: 1 },
+      e(Text, { color: '#1dd1a1', bold: true }, 'N'),
+      e(Text, { color: '#636e72' }, ' New  '),
+      e(Text, { color: '#636e72', bold: true }, 'Space'),
+      e(Text, { color: '#636e72' }, ' Toggle  '),
+      e(Text, { color: '#ff6b6b', bold: true }, 'D'),
+      e(Text, { color: '#636e72' }, ' Delete  '),
+      e(Text, { color: '#636e72', bold: true }, 'Esc'),
+      e(Text, { color: '#636e72' }, ' Back')
+    )
+  );
+}
+
+// Main App
 export function App({ port }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -97,10 +337,17 @@ export function App({ port }) {
   const [view, setView] = useState('list');
   const [pendingBreakpoint, setPendingBreakpoint] = useState(null);
   const [breakpoints, setBreakpoints] = useState({ request: [], response: [] });
+  const [blockRules, setBlockRules] = useState([]);
+  const [redirectRules, setRedirectRules] = useState([]);
   const [filter, setFilter] = useState('');
   const [filterInput, setFilterInput] = useState('');
-  const [showHelp, setShowHelp] = useState(false);
+  const [toast, setToast] = useState(null);
   const [terminalHeight, setTerminalHeight] = useState(stdout?.rows || 24);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2000);
+  };
 
   // Track terminal size
   useEffect(() => {
@@ -115,6 +362,8 @@ export function App({ port }) {
     const handleChange = () => {
       setRequests([...store.getFilteredRequests()]);
       setBreakpoints({ ...store.breakpoints });
+      setBlockRules([...store.blockRules]);
+      setRedirectRules([...store.redirectRules]);
       if (store.pendingBreakpoint && !pendingBreakpoint) {
         setPendingBreakpoint(store.pendingBreakpoint);
         setView('breakpoint');
@@ -125,18 +374,37 @@ export function App({ port }) {
     return () => store.off('change', handleChange);
   }, [pendingBreakpoint]);
 
-  // Keyboard input
+  // Global keyboard shortcuts
   useInput((input, key) => {
+    // Quit
     if (input === 'q' && view !== 'filter') exit();
-    if (input === '?' && view !== 'filter') setShowHelp(!showHelp);
 
+    // Save config
+    if (input === 's' && view !== 'filter') {
+      const result = store.saveConfig();
+      showToast(result.success ? '✓ Config saved' : `✗ ${result.error}`);
+    }
+
+    // Tab switching (only from main views)
+    if (view === 'list' || view === 'rules') {
+      if (input === '1') setView('list');
+      if (input === '2') setView('rules');
+    }
+
+    // View-specific
     if (view === 'list') {
       if (key.return && selectedId) setView('detail');
       if (input === '/') { setView('filter'); setFilterInput(filter); }
-      if (input === 'b') setView('breakpoint-manager');
-      if (input === 'c') store.clearRequests();
+      if (input === 'c' || input === 'C') store.clearRequests();
     }
-    if (view === 'filter' && key.escape) setView('list');
+
+    if (view === 'detail') {
+      if (key.escape) setView('list');
+    }
+
+    if (view === 'filter') {
+      if (key.escape) setView('list');
+    }
   });
 
   // Breakpoint handlers
@@ -164,66 +432,41 @@ export function App({ port }) {
     setView('list');
   };
 
-  // Calculate content area height (total - header(2) - footer(2) - margins)
-  const contentHeight = Math.max(10, terminalHeight - 6);
+  const stats = {
+    requests: requests.length,
+    breakpoints: breakpoints.request.length + breakpoints.response.length,
+    blocks: blockRules.length,
+    redirects: redirectRules.length
+  };
 
-  // Help overlay
-  if (showHelp) {
-    return e(Box, { flexDirection: 'column', height: terminalHeight },
-      e(Header, { port, requestCount: requests.length, breakpointCount: breakpoints.request.length + breakpoints.response.length, filter }),
-      e(Box, { flexDirection: 'column', flexGrow: 1, padding: 2 },
-        e(Box, { borderStyle: 'round', borderColor: '#48dbfb', paddingX: 2, paddingY: 1, flexDirection: 'column' },
-          e(Text, { bold: true, color: '#48dbfb' }, '  HELP'),
-          e(Text, null, ''),
-          e(Text, { color: '#feca57', bold: true }, 'Navigation'),
-          e(Text, { color: '#b2bec3' }, '  ↑/↓        Move selection'),
-          e(Text, { color: '#b2bec3' }, '  Enter      View request details'),
-          e(Text, { color: '#b2bec3' }, '  ESC        Go back'),
-          e(Text, { color: '#b2bec3' }, '  PgUp/PgDn  Scroll fast'),
-          e(Text, null, ''),
-          e(Text, { color: '#feca57', bold: true }, 'Actions'),
-          e(Text, { color: '#b2bec3' }, '  /          Filter by URL'),
-          e(Text, { color: '#b2bec3' }, '  b          Breakpoint manager'),
-          e(Text, { color: '#b2bec3' }, '  c          Clear all requests'),
-          e(Text, { color: '#b2bec3' }, '  q          Quit'),
-          e(Text, null, ''),
-          e(Text, { color: '#feca57', bold: true }, 'Detail View'),
-          e(Text, { color: '#b2bec3' }, '  1-4        Switch tabs'),
-          e(Text, null, ''),
-          e(Text, { color: '#feca57', bold: true }, 'Breakpoint'),
-          e(Text, { color: '#b2bec3' }, '  f          Forward as-is'),
-          e(Text, { color: '#b2bec3' }, '  e          Edit before forward'),
-          e(Text, { color: '#b2bec3' }, '  d          Drop request'),
-          e(Text, null, ''),
-          e(Text, { color: '#636e72' }, 'Press ? to close')
-        )
-      ),
-      e(Footer, { view: 'list' })
-    );
-  }
+  const contentHeight = Math.max(10, terminalHeight - 5);
 
-  // Main app shell
   return e(Box, { flexDirection: 'column', height: terminalHeight },
-    // Fixed Header
-    e(Header, {
-      port,
-      requestCount: requests.length,
-      breakpointCount: breakpoints.request.length + breakpoints.response.length,
-      filter
-    }),
+    // Header
+    e(Header, { port, view: view === 'rules' ? 'rules' : 'list', stats }),
 
-    // Scrollable Content Area
-    e(Box, {
-      flexDirection: 'column',
-      flexGrow: 1,
-      overflow: 'hidden',
-      paddingX: 1
-    },
+    // Toast
+    toast && e(Box, { backgroundColor: '#1dd1a1', paddingX: 2, marginX: 1 },
+      e(Text, { color: '#000', bold: true }, toast)
+    ),
+
+    // Content
+    e(Box, { flexDirection: 'column', flexGrow: 1, overflow: 'hidden', paddingX: 1 },
+
       view === 'list' && e(RequestList, {
         requests,
         selectedId,
         onSelect: setSelectedId,
-        maxHeight: contentHeight
+        maxHeight: contentHeight,
+        onAddBreakpoint: (pattern) => {
+          store.addBreakpoint('request', pattern);
+          store.addBreakpoint('response', pattern);
+          showToast(`✓ Breakpoint: ${pattern}`);
+        },
+        onAddBlock: (pattern) => {
+          store.addBlockRule(pattern);
+          showToast(`✓ Blocked: ${pattern}`);
+        }
       }),
 
       view === 'detail' && e(RequestDetail, {
@@ -236,18 +479,14 @@ export function App({ port }) {
         breakpoint: pendingBreakpoint,
         onForward: handleBreakpointForward,
         onEdit: handleBreakpointEdit,
-        onDrop: handleBreakpointDrop,
-        maxHeight: contentHeight
+        onDrop: handleBreakpointDrop
       }),
 
-      view === 'breakpoint-manager' && e(BreakpointManager, {
+      view === 'rules' && e(RulesPanel, {
         breakpoints,
-        onAdd: (type, pattern) => store.addBreakpoint(type, pattern),
-        onRemove: (type, index) => store.removeBreakpoint(type, index),
-        onToggle: (type, index) => store.toggleBreakpoint(type, index),
-        onClear: () => store.clearBreakpoints(),
-        onBack: () => setView('list'),
-        maxHeight: contentHeight
+        blockRules,
+        redirectRules,
+        onBack: () => setView('list')
       }),
 
       view === 'filter' && e(Box, { paddingY: 1 },
@@ -261,7 +500,7 @@ export function App({ port }) {
       )
     ),
 
-    // Fixed Footer
-    e(Footer, { view })
+    // Context bar
+    e(ContextBar, { view, hasSelection: !!selectedId })
   );
 }
