@@ -59,7 +59,7 @@ node yourapp.js
 |---------|-------|-------------|
 | `list [n]` | `ls` | List last n requests (default 20) |
 | `show <id>` | `s` | Show full request/response details |
-| `body <id> [req\|res]` | `b` | Show body content (default: response) |
+| `body <id> [req\|res] [--sse]` | `b` | Show body (--sse parses SSE streams) |
 | `headers <id>` | `h` | Show all headers |
 | `replay <id>` | `r` | Replay a captured request |
 | `edit <id>` | `e` | Edit request JSON and send modified |
@@ -69,6 +69,76 @@ node yourapp.js
 | `clear` | | Clear request history |
 | `help` | `?` | Show help |
 | `quit` | `q` | Exit proxy |
+
+## Breakpoints
+
+Pause requests/responses matching a URL pattern, edit them, then forward or drop.
+
+### Setting Breakpoints
+
+```
+bp req <pattern>      # Break on request URLs containing pattern
+bp res <pattern>      # Break on response URLs containing pattern
+bp list               # List all breakpoints
+bp del <index>        # Delete breakpoint by index
+bp toggle <index>     # Enable/disable breakpoint
+bp clear              # Remove all breakpoints
+```
+
+### When Paused
+
+When a breakpoint hits, the proxy pauses and writes the request/response to a temp JSON file:
+
+```
+⏸ BREAKPOINT HIT  [5] REQUEST
+  POST https://api.anthropic.com/v1/messages?beta=true
+  Edit: .bp-5-request.json
+  Commands: forward (send as-is), edit (apply changes), drop (abort)
+```
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `forward` | `f` | Send request/response as-is |
+| `edit` | `e` | Read modified JSON from temp file and send |
+| `drop` | `d` | Abort the request (returns 499) |
+| `show` | `s` | Display current data |
+
+### Example: Modify API Request
+
+```
+mitm> bp req /v1/messages
+✓ Request breakpoint added: /v1/messages
+
+# ... make a request from your app ...
+
+⏸ BREAKPOINT HIT  [1] REQUEST
+  POST https://api.anthropic.com/v1/messages?beta=true
+  Edit: .bp-1-request.json
+
+# Edit .bp-1-request.json in your editor (change model, prompt, etc.)
+
+mitm> edit
+✓ Forwarding modified request
+[1] POST   200   3.2KB https://api.anthropic.com/v1/messages... [MOD] [BP]
+```
+
+### Example: Modify API Response
+
+```
+mitm> bp res /v1/messages
+✓ Response breakpoint added: /v1/messages
+
+# ... make a request ...
+
+⏸ BREAKPOINT HIT  [2] RESPONSE
+  POST https://api.anthropic.com/v1/messages?beta=true
+  Edit: .bp-2-response.json
+
+# Edit .bp-2-response.json to modify the response body
+
+mitm> edit
+✓ Forwarding modified response
+```
 
 ## Examples
 
@@ -159,6 +229,26 @@ x-request-id: req_abc123
 
 Body: 3412 bytes
 ```
+
+## SSE Stream Parsing
+
+For Server-Sent Events responses (like Claude API streaming), use `--sse` to reconstruct the full text:
+
+```
+mitm> body 8
+event: message_start
+data: {"type":"message_start",...}
+
+event: content_block_delta
+data: {"type":"content_block_delta","delta":{"text":"Hello"}}
+...
+
+mitm> body 8 --sse
+Reconstructed SSE content:
+Hello! How can I help you today?
+```
+
+This extracts all `content_block_delta` text chunks and concatenates them.
 
 ## Certificate Setup
 
