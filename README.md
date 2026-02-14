@@ -1,6 +1,10 @@
 # @withseismic/mitm
 
-An interactive MITM proxy for intercepting, inspecting, and modifying HTTP/HTTPS traffic. Ships with a React Ink terminal UI, a file-based rule engine with hot-reload, a REST API for programmatic control, and first-run CA setup that handles certificate generation and Windows trust store installation automatically.
+So, you want to see exactly what your app is sending over the wire. Every request, every response, every header — laid bare. Maybe you want to intercept a request mid-flight and swap out the auth token. Maybe you want to mock an entire API that doesn't exist yet. Maybe you just want to block that one analytics call that's slowing everything down.
+
+That's what this is. A local man-in-the-middle proxy that sits between your app and the internet, letting you capture, inspect, and rewrite HTTP/HTTPS traffic in real-time. It's got a terminal UI for when you want to poke around manually, a REST API for when you want to automate things, and a rule engine that hot-reloads TypeScript transforms so you can build exactly the interception logic you need without restarting anything.
+
+It also ships as a **Claude Code plugin** — install it and your AI agent can inspect your traffic, create rules, and debug network issues alongside you.
 
 ## Quick Start
 
@@ -8,45 +12,57 @@ An interactive MITM proxy for intercepting, inspecting, and modifying HTTP/HTTPS
 npx @withseismic/mitm
 ```
 
-On first run, the proxy will:
+That's it. On first run it handles certificate generation and trust store setup, prints the env vars you need, and drops you into the interactive UI. Every request your app makes through the proxy shows up in real-time.
 
-1. Generate a local Certificate Authority in `.certs/`
-2. Offer to install it to your Windows trust store (UAC prompt)
-3. Print the `HTTP_PROXY` / `HTTPS_PROXY` env vars you need to set
-4. Launch the interactive terminal UI
+## What Can You Do With It?
+
+- **See everything** — Every request and response, headers and bodies, timing and status codes
+- **Modify in-flight** — Rewrite headers, swap bodies, change status codes before they reach your app
+- **Block traffic** — Kill analytics, ads, or any URL pattern with one rule
+- **Mock APIs** — Return fake responses for endpoints that don't exist yet
+- **Redirect requests** — Point production API calls at your staging server
+- **Set breakpoints** — Pause any request and manually inspect/edit before forwarding
+- **Automate it all** — REST API on port 8889 for programmatic control from scripts or agents
 
 ## Installation
 
 ```bash
-# Run directly (no install)
+# Run directly (no install needed)
 npx @withseismic/mitm
 
-# Or install globally
+# Install globally
 npm i -g @withseismic/mitm
 mitm
 
-# Or as a project dependency
+# As a project dependency
 pnpm i @withseismic/mitm
 ```
 
 ## Claude Code Plugin
 
-This package ships as a Claude Code plugin with skills and scripts that let any agent inspect traffic, create rules, and debug HTTP issues — no MCP server needed.
+This package ships as a Claude Code plugin. Install it and your agent gets skills for traffic inspection, rule management, and network debugging — no MCP server needed, just curl against the local API.
 
 ### Install from Marketplace
 
 ```bash
-# Inside Claude Code TUI
-/plugin install @withseismic/mitm
+# 1. Add the marketplace (one-time)
+/plugin marketplace add dougwithseismic/node-mitm-proxy
 
-# Or from the CLI
-claude plugin install @withseismic/mitm
+# 2. Install the plugin
+/plugin install mitm@withseismic-tools
+```
+
+Or from the CLI:
+
+```bash
+claude plugin marketplace add dougwithseismic/node-mitm-proxy
+claude plugin install mitm@withseismic-tools
 ```
 
 To scope the plugin to just the current project (shared with your team via `.claude/settings.json`):
 
 ```bash
-claude plugin install @withseismic/mitm --scope project
+claude plugin install mitm@withseismic-tools --scope project
 ```
 
 ### Install for Development
@@ -54,12 +70,12 @@ claude plugin install @withseismic/mitm --scope project
 If you've cloned the repo locally:
 
 ```bash
-claude --plugin-dir ./path/to/mitm-proxy
+claude --plugin-dir ./path/to/node-mitm-proxy
 ```
 
 ### Available Skills
 
-Once installed, the following slash commands are available:
+Once installed, these slash commands are available:
 
 | Command | Description |
 |---------|-------------|
@@ -69,24 +85,24 @@ Once installed, the following slash commands are available:
 | `/mitm-rules [description]` | Create and manage interception rules and transforms |
 | `/mitm-status` | Quick proxy status and statistics |
 
-`/mitm-inspect`, `/mitm-rules`, and `/mitm-status` are auto-invocable — Claude will use them contextually when you ask about traffic or rules. `/mitm-start` is user-invocable only (starting a proxy is a deliberate action).
+`/mitm-inspect`, `/mitm-rules`, and `/mitm-status` are auto-invocable — Claude uses them contextually when you ask about traffic or rules. `/mitm-start` is user-invocable only because starting a proxy is a deliberate action.
 
 ### Bundled Scripts
 
-Each skill includes helper scripts in its `scripts/` directory that Claude can run:
+Each skill includes helper scripts that Claude can run autonomously:
 
-| Script | Purpose |
-|--------|---------|
-| `traffic-summary.sh` | Summarize traffic by domain, status, and timing |
-| `export-har.sh` | Export captured requests as HAR-like JSON |
-| `quick-rule.sh` | One-liner rule creation (block, redirect, header, mock, delay, log) |
+| Script | What it does |
+|--------|-------------|
+| `traffic-summary.sh` | Break down traffic by domain, status code, and timing |
+| `export-har.sh` | Export captured requests as HAR-like JSON for external tools |
+| `quick-rule.sh` | Create rules with a one-liner (block, redirect, header, mock, delay, log) |
 | `rule-templates.sh` | Print ready-to-use curl commands for common rule patterns |
-| `proxy-up.sh` | Start proxy + verify + export env vars in one step |
+| `proxy-up.sh` | Start the proxy, wait for it, and export env vars in one step |
 | `health-check.sh` | Health check with retry logic and formatted output |
 
 ### Subagent
 
-The **mitm-debugger** agent can be invoked as a subagent for autonomous traffic analysis — it inspects recent requests, identifies patterns (errors, slow requests, unexpected domains), and suggests rules.
+The **mitm-debugger** agent can be invoked as a subagent for autonomous traffic analysis — it inspects recent requests, spots patterns (errors, slow calls, unexpected domains), and suggests rules to fix them.
 
 ### Verify Installation
 
@@ -134,16 +150,16 @@ Options:
 
 ## Terminal UI
 
-The proxy launches a full-screen React Ink interface with two main tabs:
+The proxy launches a full-screen React Ink interface with two tabs:
 
 ### Requests Tab
 
-Live view of all intercepted HTTP/HTTPS traffic. Each request shows method, status, size, and URL.
+Live view of all intercepted traffic. Every request shows method, status, size, and URL as it happens.
 
 | Key | Action |
 |-----|--------|
 | `Up/Down` | Navigate requests |
-| `Enter` | View request/response details |
+| `Enter` | View full request/response details |
 | `B` | Add breakpoint from selected URL |
 | `X` | Block selected URL |
 | `/` | Filter requests by URL |
@@ -162,7 +178,7 @@ Manage breakpoints, block rules, and redirect rules.
 
 ### Breakpoints
 
-When a request or response matches a breakpoint pattern, the proxy pauses and shows a breakpoint panel:
+When a request or response matches a breakpoint pattern, the proxy pauses and lets you decide:
 
 | Key | Action |
 |-----|--------|
@@ -179,13 +195,13 @@ When a request or response matches a breakpoint pattern, the proxy pauses and sh
 
 ## Rule Engine
 
-Rules intercept and transform traffic using pattern matching and TypeScript transform functions. Rules can be created via files or the REST API.
+Rules intercept and transform traffic using pattern matching and TypeScript transforms. Create them via the `rules/` directory or the REST API — either way, they hot-reload without restarting.
 
 ### File-Based Rules
 
-Drop a JSON config + TypeScript transform into the `rules/` directory. The rule loader watches for changes and hot-reloads automatically.
+Drop a JSON config + TypeScript transform into `rules/`. The loader watches for changes automatically.
 
-**Rule config** (`rules/my-rule.json`):
+**`rules/my-rule.json`:**
 
 ```json
 {
@@ -200,7 +216,7 @@ Drop a JSON config + TypeScript transform into the `rules/` directory. The rule 
 }
 ```
 
-**Transform** (`rules/my-rule.ts`):
+**`rules/my-rule.ts`:**
 
 ```typescript
 import type { TransformModule } from '@withseismic/mitm';
@@ -230,7 +246,7 @@ export default transform;
 
 ### Transform Functions
 
-Transforms receive the request or response and return a modified copy or a `TransformAction`:
+Transforms receive the request or response and return a modified copy — or a `TransformAction` to short-circuit the pipeline:
 
 ```typescript
 interface TransformModule {
@@ -238,7 +254,6 @@ interface TransformModule {
   onResponse?: (res: ProxyResponse, req: ProxyRequest) => ProxyResponse | TransformAction;
 }
 
-// Actions short-circuit the pipeline
 type TransformAction =
   | { action: 'block'; statusCode?: number }
   | { action: 'drop' }
@@ -278,7 +293,7 @@ export default transform;
 
 ## REST API
 
-A Hono-based API server runs alongside the proxy (default port `8889`) for programmatic control.
+A Hono-based API runs alongside the proxy on port `8889`. Everything you can do in the terminal UI, you can do programmatically.
 
 ### Status
 
@@ -286,7 +301,7 @@ A Hono-based API server runs alongside the proxy (default port `8889`) for progr
 GET /api/status
 ```
 
-Returns proxy state, rule counts, and request count.
+Returns proxy state, rule counts, and total request count.
 
 ### Rules
 
@@ -321,16 +336,11 @@ DELETE /api/requests             # Clear all captured requests
 
 ## Certificate Setup
 
-On first run, the proxy generates a CA key pair in `.certs/`:
-
-- `ca.key` — Private key
-- `ca.crt` — Certificate to trust
-
-The proxy dynamically generates per-host certificates signed by this CA for HTTPS interception.
+On first run, the proxy generates a CA key pair in `.certs/`. It dynamically creates per-host certificates signed by this CA for HTTPS interception.
 
 ### Automatic Setup (Windows)
 
-The first-run setup will offer to install the CA via `certutil -addstore Root`. This triggers a UAC prompt.
+The first-run wizard offers to install the CA via `certutil -addstore Root`. This triggers a UAC prompt.
 
 ### Manual Setup
 
@@ -348,7 +358,7 @@ sudo cp .certs/ca.crt /usr/local/share/ca-certificates/mitm-proxy.crt
 sudo update-ca-certificates
 ```
 
-**Or** skip system trust and set `NODE_TLS_REJECT_UNAUTHORIZED=0` for Node.js apps.
+Or skip system trust entirely and set `NODE_TLS_REJECT_UNAUTHORIZED=0` for Node.js apps.
 
 ## Project Structure
 
@@ -374,13 +384,15 @@ sudo update-ca-certificates
 │   └── transforms/
 │       └── types.ts             # Transform type definitions
 ├── rules/                       # Drop rule files here (JSON + TS)
+├── skills/                      # Claude Code plugin skills
+├── agents/                      # Claude Code subagent definitions
 ├── types/
 │   └── mitm-proxy.d.ts          # Public type exports
 ├── tests/
-│   ├── store.test.ts            # Store unit tests
-│   ├── rule-matcher.test.ts     # Rule matching tests
-│   ├── rule-executor.test.ts    # Transform pipeline tests
-│   └── setup.test.ts            # Setup utility tests
+│   ├── store.test.ts
+│   ├── rule-matcher.test.ts
+│   ├── rule-executor.test.ts
+│   └── setup.test.ts
 ├── tsup.config.ts
 └── tsconfig.json
 ```
@@ -388,26 +400,13 @@ sudo update-ca-certificates
 ## Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Dev mode (watch + rebuild)
-pnpm dev
-
-# Build
-pnpm build
-
-# Run tests
-pnpm test
-
-# Run tests in watch mode
-pnpm test:watch
-
-# Type check
-pnpm type-check
-
-# Start from built output
-pnpm start
+pnpm install        # Install dependencies
+pnpm dev            # Dev mode (watch + rebuild)
+pnpm build          # Build
+pnpm test           # Run tests
+pnpm test:watch     # Run tests in watch mode
+pnpm type-check     # Type check
+pnpm start          # Start from built output
 ```
 
 ## License

@@ -1,7 +1,14 @@
 {
-  "name": "@withseismic/mitm",
+  "name": "mitm",
   "description": "Interactive MITM proxy with rule engine, traffic inspection, and request/response transforms",
   "version": "2.0.0",
-  "author": "withseismic",
-  "repository": "https://github.com/withseismic/mitm"
+  "author": {
+    "name": "WithSeismic"
+  },
+  "homepage": "https://github.com/dougwithseismic/node-mitm-proxy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dougwithseismic/node-mitm-proxy"
+  },
+  "license": "MIT"
 }

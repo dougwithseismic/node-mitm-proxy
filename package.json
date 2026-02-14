@@ -1,13 +1,14 @@
 {
   "name": "@withseismic/mitm",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Interactive MITM proxy with React Ink UI, rule engine, and first-run CA setup",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "mitm": "./dist/index.js"
+    "mitm": "./bin/mitm.js"
   },
   "files": [
+    "bin",
     "dist",
     "rules",
     "types",
@@ -28,7 +29,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/withseismic/mitm"
+    "url": "https://github.com/dougwithseismic/node-mitm-proxy"
   },
   "engines": {
     "node": ">=20"
