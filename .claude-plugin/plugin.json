@@ -1,0 +1,7 @@
+{
+  "name": "@withseismic/mitm",
+  "description": "Interactive MITM proxy with rule engine, traffic inspection, and request/response transforms",
+  "version": "2.0.0",
+  "author": "withseismic",
+  "repository": "https://github.com/withseismic/mitm"
+}

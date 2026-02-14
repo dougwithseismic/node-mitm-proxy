@@ -1,0 +1,9 @@
+{
+  "name": "example-mock-response",
+  "match": {
+    "pattern": "/api/mock",
+    "type": "substring"
+  },
+  "phase": "response",
+  "enabled": false
+}

@@ -1,0 +1,9 @@
+{
+  "name": "example-add-header",
+  "match": {
+    "pattern": "httpbin.org",
+    "type": "substring"
+  },
+  "phase": "request",
+  "enabled": false
+}

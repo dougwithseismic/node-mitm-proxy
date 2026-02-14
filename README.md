@@ -1,345 +1,415 @@
-# MITM Proxy for Node.js
+# @withseismic/mitm
 
-A terminal CLI man-in-the-middle proxy for intercepting, inspecting, and modifying HTTP/HTTPS traffic from Node.js applications.
+An interactive MITM proxy for intercepting, inspecting, and modifying HTTP/HTTPS traffic. Ships with a React Ink terminal UI, a file-based rule engine with hot-reload, a REST API for programmatic control, and first-run CA setup that handles certificate generation and Windows trust store installation automatically.
 
-## Features
+## Quick Start
 
-- **HTTPS Interception** — Auto-generates certificates signed by a local CA
-- **Request/Response CRUD** — View, edit, replay, and export captured traffic
-- **Interactive CLI** — Real-time commands while proxy runs
-- **JSON Pretty-Print** — Auto-formats JSON bodies
-- **curl Export** — Generate curl commands from captured requests
+```bash
+npx @withseismic/mitm
+```
+
+On first run, the proxy will:
+
+1. Generate a local Certificate Authority in `.certs/`
+2. Offer to install it to your Windows trust store (UAC prompt)
+3. Print the `HTTP_PROXY` / `HTTPS_PROXY` env vars you need to set
+4. Launch the interactive terminal UI
 
 ## Installation
 
 ```bash
-cd standalone/tools/mitm-proxy
-npm install
+# Run directly (no install)
+npx @withseismic/mitm
+
+# Or install globally
+npm i -g @withseismic/mitm
+mitm
+
+# Or as a project dependency
+pnpm i @withseismic/mitm
 ```
 
-## Usage
+## Claude Code Plugin
 
-### 1. Start the Proxy
+This package ships as a Claude Code plugin with skills and scripts that let any agent inspect traffic, create rules, and debug HTTP issues — no MCP server needed.
+
+### Install from Marketplace
 
 ```bash
-node proxy.js
-# Or with options:
-node proxy.js --port 9999 --verbose
+# Inside Claude Code TUI
+/plugin install @withseismic/mitm
+
+# Or from the CLI
+claude plugin install @withseismic/mitm
 ```
 
-### 2. Configure Your Node.js App
+To scope the plugin to just the current project (shared with your team via `.claude/settings.json`):
+
+```bash
+claude plugin install @withseismic/mitm --scope project
+```
+
+### Install for Development
+
+If you've cloned the repo locally:
+
+```bash
+claude --plugin-dir ./path/to/mitm-proxy
+```
+
+### Available Skills
+
+Once installed, the following slash commands are available:
+
+| Command | Description |
+|---------|-------------|
+| `/mitm-help` | Overview of the plugin, API reference, and getting started guide |
+| `/mitm-start` | Start the proxy and configure `HTTP_PROXY`/`HTTPS_PROXY` env vars |
+| `/mitm-inspect [filter]` | List, filter, and inspect captured HTTP traffic |
+| `/mitm-rules [description]` | Create and manage interception rules and transforms |
+| `/mitm-status` | Quick proxy status and statistics |
+
+`/mitm-inspect`, `/mitm-rules`, and `/mitm-status` are auto-invocable — Claude will use them contextually when you ask about traffic or rules. `/mitm-start` is user-invocable only (starting a proxy is a deliberate action).
+
+### Bundled Scripts
+
+Each skill includes helper scripts in its `scripts/` directory that Claude can run:
+
+| Script | Purpose |
+|--------|---------|
+| `traffic-summary.sh` | Summarize traffic by domain, status, and timing |
+| `export-har.sh` | Export captured requests as HAR-like JSON |
+| `quick-rule.sh` | One-liner rule creation (block, redirect, header, mock, delay, log) |
+| `rule-templates.sh` | Print ready-to-use curl commands for common rule patterns |
+| `proxy-up.sh` | Start proxy + verify + export env vars in one step |
+| `health-check.sh` | Health check with retry logic and formatted output |
+
+### Subagent
+
+The **mitm-debugger** agent can be invoked as a subagent for autonomous traffic analysis — it inspects recent requests, identifies patterns (errors, slow requests, unexpected domains), and suggests rules.
+
+### Verify Installation
+
+```bash
+# Check the plugin is loaded
+/plugin
+
+# Try a skill
+/mitm-help
+```
+
+## Configuring Your App
+
+Set these environment variables to route traffic through the proxy:
 
 **PowerShell:**
+
 ```powershell
-$env:HTTP_PROXY = "http://127.0.0.1:8888"
-$env:HTTPS_PROXY = "http://127.0.0.1:8888"
-$env:NODE_EXTRA_CA_CERTS = "$PWD\.certs\ca.crt"
+$env:HTTP_PROXY = "http://localhost:8888"
+$env:HTTPS_PROXY = "http://localhost:8888"
+$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
 node yourapp.js
 ```
 
-**Bash:**
+**Bash / Git Bash:**
+
 ```bash
-HTTP_PROXY=http://127.0.0.1:8888 \
-HTTPS_PROXY=http://127.0.0.1:8888 \
-NODE_EXTRA_CA_CERTS=./.certs/ca.crt \
+export HTTP_PROXY="http://localhost:8888"
+export HTTPS_PROXY="http://localhost:8888"
+export NODE_TLS_REJECT_UNAUTHORIZED=0
 node yourapp.js
 ```
 
-**CMD:**
-```cmd
-set HTTP_PROXY=http://127.0.0.1:8888
-set HTTPS_PROXY=http://127.0.0.1:8888
-set NODE_EXTRA_CA_CERTS=path\to\.certs\ca.crt
-node yourapp.js
-```
-
-## CLI Commands
-
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `list [n]` | `ls` | List last n requests (default 20) |
-| `show <id>` | `s` | Show full request/response details |
-| `body <id> [req\|res] [--sse]` | `b` | Show body (--sse parses SSE streams) |
-| `headers <id>` | `h` | Show all headers |
-| `replay <id>` | `r` | Replay a captured request |
-| `edit <id>` | `e` | Edit request JSON and send modified |
-| `filter <pattern>` | `f` | Show requests matching URL pattern |
-| `curl <id>` | | Generate curl command |
-| `export <id> <file>` | | Export request to JSON file |
-| `clear` | | Clear request history |
-| `help` | `?` | Show help |
-| `quit` | `q` | Exit proxy |
-
-## Breakpoints
-
-Pause requests/responses matching a URL pattern, edit them, then forward or drop.
-
-### Setting Breakpoints
+## CLI Options
 
 ```
-bp req <pattern>      # Break on request URLs containing pattern
-bp res <pattern>      # Break on response URLs containing pattern
-bp list               # List all breakpoints
-bp del <index>        # Delete breakpoint by index
-bp toggle <index>     # Enable/disable breakpoint
-bp clear              # Remove all breakpoints
+mitm [options]
+
+Options:
+  -p, --port <number>      Proxy port (default: 8888)
+  -a, --api-port <number>  REST API port (default: 8889)
+  --skip-setup             Skip first-run CA setup
+  -h, --help               Show help
 ```
 
-### When Paused
+## Terminal UI
 
-When a breakpoint hits, the proxy pauses and writes the request/response to a temp JSON file:
+The proxy launches a full-screen React Ink interface with two main tabs:
 
-```
-⏸ BREAKPOINT HIT  [5] REQUEST
-  POST https://api.anthropic.com/v1/messages?beta=true
-  Edit: .bp-5-request.json
-  Commands: forward (send as-is), edit (apply changes), drop (abort)
-```
+### Requests Tab
 
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `forward` | `f` | Send request/response as-is |
-| `edit` | `e` | Read modified JSON from temp file and send |
-| `drop` | `d` | Abort the request (returns 499) |
-| `show` | `s` | Display current data |
+Live view of all intercepted HTTP/HTTPS traffic. Each request shows method, status, size, and URL.
 
-### Example: Modify API Request
+| Key | Action |
+|-----|--------|
+| `Up/Down` | Navigate requests |
+| `Enter` | View request/response details |
+| `B` | Add breakpoint from selected URL |
+| `X` | Block selected URL |
+| `/` | Filter requests by URL |
+| `C` | Clear all requests |
 
-```
-mitm> bp req /v1/messages
-✓ Request breakpoint added: /v1/messages
+### Rules Tab
 
-# ... make a request from your app ...
+Manage breakpoints, block rules, and redirect rules.
 
-⏸ BREAKPOINT HIT  [1] REQUEST
-  POST https://api.anthropic.com/v1/messages?beta=true
-  Edit: .bp-1-request.json
+| Key | Action |
+|-----|--------|
+| `1/2/3` | Switch between Breakpoints / Blocks / Redirects |
+| `N` | Add new rule |
+| `Space` | Toggle rule on/off |
+| `D` | Delete rule |
 
-# Edit .bp-1-request.json in your editor (change model, prompt, etc.)
+### Breakpoints
 
-mitm> edit
-✓ Forwarding modified request
-[1] POST   200   3.2KB https://api.anthropic.com/v1/messages... [MOD] [BP]
-```
+When a request or response matches a breakpoint pattern, the proxy pauses and shows a breakpoint panel:
 
-### Example: Modify API Response
+| Key | Action |
+|-----|--------|
+| `E` | Edit the request/response data, then forward |
+| `F` | Forward as-is |
+| `D` | Drop the request (returns 499) |
 
-```
-mitm> bp res /v1/messages
-✓ Response breakpoint added: /v1/messages
+### Global Keys
 
-# ... make a request ...
+| Key | Action |
+|-----|--------|
+| `S` | Save current config (rules, breakpoints, filter) |
+| `Q` | Quit |
 
-⏸ BREAKPOINT HIT  [2] RESPONSE
-  POST https://api.anthropic.com/v1/messages?beta=true
-  Edit: .bp-2-response.json
+## Rule Engine
 
-# Edit .bp-2-response.json to modify the response body
+Rules intercept and transform traffic using pattern matching and TypeScript transform functions. Rules can be created via files or the REST API.
 
-mitm> edit
-✓ Forwarding modified response
-```
+### File-Based Rules
 
-## Examples
+Drop a JSON config + TypeScript transform into the `rules/` directory. The rule loader watches for changes and hot-reloads automatically.
 
-### Inspect Claude Code API Traffic
+**Rule config** (`rules/my-rule.json`):
 
-```
-# Start proxy
-node proxy.js
-
-# In another terminal, run Claude Code through proxy
-$env:HTTP_PROXY = "http://127.0.0.1:8888"
-$env:HTTPS_PROXY = "http://127.0.0.1:8888"
-$env:NODE_EXTRA_CA_CERTS = "..\.certs\ca.crt"
-claude
-```
-
-Then in the proxy CLI:
-
-```
-mitm> list
-[1] POST   200  298B  https://api.anthropic.com/v1/messages?beta=true
-[2] GET    200   40B  https://api.anthropic.com/api/hello
-[3] POST   200  3.4KB https://api.anthropic.com/v1/messages?beta=true
-
-mitm> body 1 req
+```json
 {
-  "model": "claude-sonnet-4-20250514",
-  "messages": [{"role": "user", "content": "hello"}],
-  ...
+  "name": "my-rule",
+  "match": {
+    "pattern": "api.example.com",
+    "type": "substring",
+    "methods": ["GET", "POST"]
+  },
+  "phase": "request",
+  "enabled": true
+}
+```
+
+**Transform** (`rules/my-rule.ts`):
+
+```typescript
+import type { TransformModule } from '@withseismic/mitm';
+
+const transform: TransformModule = {
+  onRequest(req) {
+    return {
+      ...req,
+      headers: {
+        ...req.headers,
+        'x-custom-header': 'injected-by-proxy',
+      },
+    };
+  },
+};
+
+export default transform;
+```
+
+### Match Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| `substring` | URL contains string (default) | `"api.example.com"` |
+| `regex` | Regular expression | `"\\.json$"` |
+| `glob` | Glob pattern | `"**/api/**"` |
+
+### Transform Functions
+
+Transforms receive the request or response and return a modified copy or a `TransformAction`:
+
+```typescript
+interface TransformModule {
+  onRequest?: (req: ProxyRequest) => ProxyRequest | TransformAction;
+  onResponse?: (res: ProxyResponse, req: ProxyRequest) => ProxyResponse | TransformAction;
 }
 
-mitm> body 3
+// Actions short-circuit the pipeline
+type TransformAction =
+  | { action: 'block'; statusCode?: number }
+  | { action: 'drop' }
+  | { action: 'redirect'; url: string };
+```
+
+### Example: Mock a Response
+
+**`rules/mock-api.json`:**
+
+```json
 {
-  "content": [{"type": "text", "text": "Hello! How can I help..."}],
-  ...
+  "name": "mock-api",
+  "match": { "pattern": "/api/users", "type": "substring" },
+  "phase": "response",
+  "enabled": true
 }
-
-mitm> filter /v1/messages
-[1] POST   200  298B  https://api.anthropic.com/v1/messages?beta=true
-[3] POST   200  3.4KB https://api.anthropic.com/v1/messages?beta=true
-
-mitm> curl 1
-curl -X POST \
-  -H 'content-type: application/json' \
-  -H 'x-api-key: sk-...' \
-  -d '{"model":"claude-sonnet-4-20250514",...}' \
-  'https://api.anthropic.com/v1/messages?beta=true'
-
-mitm> export 3 conversation.json
-Exported to conversation.json
 ```
 
-### Edit and Replay a Request
+**`rules/mock-api.ts`:**
 
-```
-mitm> edit 1
-Edit the request in: .edit-1.json
-Press Enter when done editing, or type "cancel" to abort
+```typescript
+import type { TransformModule } from '@withseismic/mitm';
 
-# Modify the JSON file, then press Enter
+const transform: TransformModule = {
+  onResponse() {
+    return {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ users: [{ id: 1, name: 'Mock User' }] }),
+    };
+  },
+};
 
-Sending modified request...
-✓ Modified request sent as 4, status 200
-```
-
-### View Request Details
-
-```
-mitm> show 1
-
-═══ Request 1 ═══
-Method:  POST
-URL:     https://api.anthropic.com/v1/messages?beta=true
-Time:    2026-02-11T12:34:56.789Z
-Duration: 561ms
-
-── Request Headers ──
-content-type: application/json
-x-api-key: sk-ant-...
-anthropic-version: 2023-06-01
-
-── Request Body ──
-(1247 bytes)
-
-── Response 200 ──
-content-type: application/json
-x-request-id: req_abc123
-
-Body: 3412 bytes
+export default transform;
 ```
 
-## SSE Stream Parsing
+## REST API
 
-For Server-Sent Events responses (like Claude API streaming), use `--sse` to reconstruct the full text:
+A Hono-based API server runs alongside the proxy (default port `8889`) for programmatic control.
+
+### Status
 
 ```
-mitm> body 8
-event: message_start
-data: {"type":"message_start",...}
-
-event: content_block_delta
-data: {"type":"content_block_delta","delta":{"text":"Hello"}}
-...
-
-mitm> body 8 --sse
-Reconstructed SSE content:
-Hello! How can I help you today?
+GET /api/status
 ```
 
-This extracts all `content_block_delta` text chunks and concatenates them.
+Returns proxy state, rule counts, and request count.
+
+### Rules
+
+```
+GET    /api/rules              # List all rules (file + API)
+POST   /api/rules              # Create a rule (with optional inline transformCode)
+PUT    /api/rules/:id          # Update a rule
+DELETE /api/rules/:id          # Delete a rule
+PATCH  /api/rules/:id/toggle   # Toggle rule enabled/disabled
+```
+
+**Create a rule with inline transform:**
+
+```bash
+curl -X POST http://localhost:8889/api/rules \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "add-header",
+    "match": { "pattern": "api.example.com" },
+    "phase": "request",
+    "transformCode": "export default { onRequest(req) { return { ...req, headers: { ...req.headers, \"x-injected\": \"true\" } }; } };"
+  }'
+```
+
+### Requests
+
+```
+GET    /api/requests            # List captured requests (?filter=...&limit=100&offset=0)
+GET    /api/requests/:id        # Get full request/response detail
+DELETE /api/requests             # Clear all captured requests
+```
 
 ## Certificate Setup
 
-On first run, the proxy generates a Certificate Authority (CA) in `.certs/`:
-- `ca.key` — Private key (keep secret)
-- `ca.crt` — Certificate (trust this in your apps)
+On first run, the proxy generates a CA key pair in `.certs/`:
 
-The proxy dynamically generates per-host certificates signed by this CA, allowing HTTPS interception.
+- `ca.key` — Private key
+- `ca.crt` — Certificate to trust
 
-### Trust the CA System-Wide (Optional)
+The proxy dynamically generates per-host certificates signed by this CA for HTTPS interception.
 
-**Windows:**
-1. Double-click `.certs/ca.crt`
-2. Install Certificate → Local Machine → Trusted Root Certification Authorities
+### Automatic Setup (Windows)
+
+The first-run setup will offer to install the CA via `certutil -addstore Root`. This triggers a UAC prompt.
+
+### Manual Setup
 
 **macOS:**
+
 ```bash
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain .certs/ca.crt
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain .certs/ca.crt
 ```
 
 **Linux:**
+
 ```bash
 sudo cp .certs/ca.crt /usr/local/share/ca-certificates/mitm-proxy.crt
 sudo update-ca-certificates
 ```
 
-## Export Format
+**Or** skip system trust and set `NODE_TLS_REJECT_UNAUTHORIZED=0` for Node.js apps.
 
-Exported JSON files contain:
-
-```json
-{
-  "method": "POST",
-  "url": "https://api.example.com/endpoint",
-  "requestHeaders": { "content-type": "application/json", ... },
-  "requestBody": "base64-encoded-body",
-  "responseStatus": 200,
-  "responseHeaders": { "content-type": "application/json", ... },
-  "responseBody": "base64-encoded-body",
-  "timestamp": "2026-02-11T12:34:56.789Z",
-  "duration": 234
-}
-```
-
-## Options
+## Project Structure
 
 ```
-node proxy.js [options]
-
-Options:
-  -p, --port <number>  Proxy port (default: 8888)
-  -v, --verbose        Verbose logging (show CONNECT requests)
-  --no-intercept       Pass through without MITM (no HTTPS decryption)
-  -h, --help           Show help
+@withseismic/mitm
+├── src/
+│   ├── index.ts                 # CLI entry point
+│   ├── setup.ts                 # First-run CA setup + env help
+│   ├── proxy.ts                 # HTTP/HTTPS proxy server + CA generation
+│   ├── store.ts                 # In-memory state (requests, rules, breakpoints)
+│   ├── api-server.ts            # Hono REST API
+│   ├── app.tsx                  # React Ink terminal UI
+│   ├── components/
+│   │   ├── request-list.tsx     # Request list view
+│   │   ├── request-detail.tsx   # Request/response detail view
+│   │   ├── breakpoint-panel.tsx # Breakpoint editor
+│   │   └── status-bar.tsx       # Status bar
+│   ├── rules/
+│   │   ├── types.ts             # Rule type definitions
+│   │   ├── rule-loader.ts       # File watcher + hot-reload
+│   │   ├── rule-matcher.ts      # Pattern matching (substring/regex/glob)
+│   │   └── rule-executor.ts     # Transform pipeline with timeout
+│   └── transforms/
+│       └── types.ts             # Transform type definitions
+├── rules/                       # Drop rule files here (JSON + TS)
+├── types/
+│   └── mitm-proxy.d.ts          # Public type exports
+├── tests/
+│   ├── store.test.ts            # Store unit tests
+│   ├── rule-matcher.test.ts     # Rule matching tests
+│   ├── rule-executor.test.ts    # Transform pipeline tests
+│   └── setup.test.ts            # Setup utility tests
+├── tsup.config.ts
+└── tsconfig.json
 ```
 
-## Troubleshooting
-
-### "UNABLE_TO_VERIFY_LEAF_SIGNATURE" or "CERT_UNTRUSTED"
-
-The app isn't trusting the CA certificate. Make sure `NODE_EXTRA_CA_CERTS` points to the correct `ca.crt` path.
-
-### Proxy Not Intercepting Traffic
-
-1. Check the app respects `HTTP_PROXY`/`HTTPS_PROXY` env vars
-2. Some apps use their own HTTP clients that ignore proxy settings
-3. Try `--verbose` to see connection attempts
-
-### Port Already in Use
+## Development
 
 ```bash
-node proxy.js --port 9999
+# Install dependencies
+pnpm install
+
+# Dev mode (watch + rebuild)
+pnpm dev
+
+# Build
+pnpm build
+
+# Run tests
+pnpm test
+
+# Run tests in watch mode
+pnpm test:watch
+
+# Type check
+pnpm type-check
+
+# Start from built output
+pnpm start
 ```
 
-## Files
+## License
 
-```
-mitm-proxy/
-├── proxy.js          # Main proxy server + CLI
-├── package.json      # Dependencies
-├── test-client.js    # Test script
-├── run-test.bat      # Run test with env vars
-├── mitm.ps1          # PowerShell launcher
-├── README.md         # This file
-└── .certs/           # Generated certificates
-    ├── ca.key        # CA private key
-    └── ca.crt        # CA certificate (trust this)
-```
-
-## Dependencies
-
-- `node-forge` — Certificate generation
-- `commander` — CLI argument parsing
-- `chalk` — Terminal colors
+MIT
