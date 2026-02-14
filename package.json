@@ -1,6 +1,6 @@
 {
   "name": "@withseismic/mitm",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Interactive MITM proxy with React Ink UI, rule engine, and first-run CA setup",
   "type": "module",
   "main": "dist/index.js",
@@ -43,7 +43,7 @@
     "start": "node dist/index.js",
     "type-check": "tsc --noEmit",
     "prepublishOnly": "pnpm build",
-    "classic": "node proxy.js",
+
     "test": "vitest run",
     "test:watch": "vitest"
   },

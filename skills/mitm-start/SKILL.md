@@ -12,17 +12,17 @@ Start the `@withseismic/mitm` proxy and configure the shell to route traffic thr
 
 ## Steps
 
-### 1. Start the proxy in background
+### 1. Start the proxy in headless mode
 
 ```bash
-npx @withseismic/mitm --skip-setup &
+npx @withseismic/mitm --headless &
 ```
+
+The `--headless` flag runs the proxy and API server without the terminal UI. This is required when launching from scripts, CI, or Claude Code. Headless mode also auto-activates when no TTY is detected.
 
 The proxy listens on two ports:
 - **8888** — HTTP/HTTPS proxy (intercepts traffic)
 - **8889** — REST API (control plane)
-
-Use `--skip-setup` to skip the interactive first-run CA certificate wizard (useful in CI or when certs already exist).
 
 ### 2. Set proxy environment variables
 
@@ -59,8 +59,10 @@ curl -s http://localhost:8889/api/status | cat
 
 | Flag | Description |
 |------|-------------|
+| `--headless` | Run without terminal UI (proxy + API only) |
 | `--skip-setup` | Skip interactive CA certificate setup |
 | `--port <n>` | Override default proxy port (8888) |
+| `--api-port <n>` | Override default API port (8889) |
 
 ## Bundled script
 
@@ -75,5 +77,6 @@ This will start the proxy if not running, wait for it to come up (max 10s), and 
 ## Notes
 
 - The proxy generates a local CA certificate in `.certs/` on first run. You may need to trust this CA in your browser or OS to intercept HTTPS without warnings.
+- CA setup is automatically skipped in non-interactive contexts (no TTY).
 - The proxy binds to `127.0.0.1` only — not exposed to the network.
 - To stop the proxy, kill the background process: `kill %1` or find it with `lsof -i :8888`.

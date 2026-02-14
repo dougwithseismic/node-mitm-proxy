@@ -19,7 +19,7 @@ fi
 
 # Start proxy in background
 echo "# Starting MITM proxy on port ${PORT}..." >&2
-npx @withseismic/mitm --skip-setup &
+npx @withseismic/mitm --headless &
 PROXY_PID=$!
 
 # Wait for API to come up (max 10 seconds)

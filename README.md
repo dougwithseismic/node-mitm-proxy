@@ -144,9 +144,20 @@ mitm [options]
 Options:
   -p, --port <number>      Proxy port (default: 8888)
   -a, --api-port <number>  REST API port (default: 8889)
+  --headless               Run without terminal UI (proxy + API only)
   --skip-setup             Skip first-run CA setup
   -h, --help               Show help
 ```
+
+### Headless Mode
+
+When running from scripts, CI, or non-interactive contexts (like Claude Code), use `--headless` to start the proxy and API server without the terminal UI:
+
+```bash
+npx @withseismic/mitm --headless &
+```
+
+Headless mode is also **auto-detected** — if there's no TTY (piped stdin, background process, etc.), the proxy starts in headless mode automatically. CA setup is skipped in non-interactive contexts.
 
 ## Terminal UI
 

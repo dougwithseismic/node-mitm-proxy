@@ -11,7 +11,7 @@
       "name": "mitm",
       "source": "./",
       "description": "Interactive MITM proxy with traffic inspection, rule engine, and request/response transforms",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "author": {
         "name": "WithSeismic"
       },
